@@ -86,6 +86,10 @@ class TensileApp(tk.Tk):
         self._build_ui()
 
     def _build_ui(self):
+        # Настройка стилей для иерархического списка
+        style = ttk.Style()
+        style.configure("File.TCheckbutton", font=("TkDefaultFont", 10, "bold"))
+
         main = ttk.Panedwindow(self, orient=tk.HORIZONTAL)
         main.pack(fill=tk.BOTH, expand=True)
 
@@ -116,6 +120,13 @@ class TensileApp(tk.Tk):
 
         plot_btn = ttk.Button(top_controls, text="Построить", command=self.plot_data)
         plot_btn.grid(row=3, column=0, padx=5, pady=5, sticky="w")
+
+        conv_n_btn = ttk.Button(top_controls, text="Конвертировать в Н", command=self.convert_to_newtons)
+        conv_n_btn.grid(row=3, column=1, padx=5, pady=5, sticky="w")
+
+        conv_mpa_btn = ttk.Button(top_controls, text="Конвертировать в МПа", command=self.convert_to_mpa)
+        conv_mpa_btn.grid(row=3, column=2, padx=5, pady=5, sticky="w")
+
         top_controls.columnconfigure(1, weight=1)
 
         # 2. Сортировка (сворачиваемая)
@@ -242,7 +253,7 @@ class TensileApp(tk.Tk):
                         def merge_and_update():
                             self._merge_loaded_file_result(res)
                             self._update_progress(1, f"Загружен: {res['file_name']}")
-                        self.after(0, merge_and_update)
+                        self.after(0, merge_and_update())
                 def finalize():
                     self._close_progress()
                     self._after_load()
@@ -517,78 +528,152 @@ class TensileApp(tk.Tk):
         old_states = {n: v.get() for n, v in self.sample_states.items()}
         self.sample_states = {}
 
-        row = 0
-        select_all_var = tk.BooleanVar(value=True)
-        def toggle_all():
-            for name, var in self.sample_states.items():
-                var.set(select_all_var.get())
-            self.plot_data()
-        
-        header = ttk.Frame(parent)
-        header.grid(row=row, column=0, columnspan=10, sticky="w", padx=5, pady=5)
-        ttk.Checkbutton(header, text="Выбрать все", variable=select_all_var, command=toggle_all).pack(side=tk.LEFT)
-        row += 1
-
         styles = ["-", "--", "-.", ":", "None"]
         markers = ["None", "o", "s", "D", "v", "^", "<", ">", "p", "*", "+", "x"]
         widths = ["0.5", "1.0", "1.5", "2.0", "2.5", "3.0", "4.0", "5.0"]
 
-        for name in self._sorted_sample_names():
-            # Восстанавливаем состояние или создаем новое
-            val = old_states.get(name, True)
-            var = tk.BooleanVar(value=val)
-            self.sample_states[name] = var
+        # Группируем образцы по файлам
+        files_dict = {} # {filename: [sample_names]}
+        sorted_names = self._sorted_sample_names()
+        for name in sorted_names:
+            fname = self.sample_file.get(name, "Unknown")
+            if fname not in files_dict:
+                files_dict[fname] = []
+            files_dict[fname].append(name)
+
+        row = 0
+        for fname in sorted(files_dict.keys()):
+            # Чекбокс для всего файла
+            file_var = self.file_states.get(fname, tk.BooleanVar(value=True))
             
-            color = self.sample_colors.get(name) or self._default_color(0)
+            # Функция для переключения всех образцов файла
+            def toggle_file(f=fname, v=file_var):
+                state = v.get()
+                for sname in files_dict[f]:
+                    if sname in self.sample_states:
+                        self.sample_states[sname].set(state)
+                self.plot_data()
+
+            file_frame = ttk.Frame(parent)
+            file_frame.grid(row=row, column=0, columnspan=10, sticky="w", padx=5, pady=(5, 0))
             
-            # Маркер цвета
-            marker_canvas = tk.Canvas(parent, width=14, height=14)
-            marker_canvas.grid(row=row, column=0, padx=2, pady=2)
-            marker_canvas.create_rectangle(2, 2, 12, 12, fill=color, outline="black")
+            ttk.Checkbutton(file_frame, text=f"📁 {fname}", variable=file_var, 
+                            command=toggle_file, style="File.TCheckbutton").pack(side=tk.LEFT)
             
-            # Чекбокс
-            chk = ttk.Checkbutton(parent, text=name, variable=var, command=self.plot_data)
-            chk.grid(row=row, column=1, padx=2, pady=2, sticky="w")
-            
-            # Кнопка цвета
-            ttk.Button(parent, text="🎨", width=3, command=lambda n=name: self._choose_color(n)).grid(row=row, column=2, padx=2, pady=2)
-            
-            # Настройки стиля (только если не в главном окне или если хотим там тоже)
-            # Пользователь просил: "Продублировать функционал окна 'образцы' как пункт главного окна (без удаления, только выбор и изменение цвета)"
-            # Значит в главном окне только чекбокс и цвет. В окне образцов - все настройки.
-            
+            # Кнопка удаления файла только в окне образцов
             if not is_main:
-                # Толщина
-                ttk.Label(parent, text="W:").grid(row=row, column=3, padx=2)
-                w_cb = ttk.Combobox(parent, values=widths, textvariable=self.sample_linewidths[name], width=4, state="readonly")
-                w_cb.grid(row=row, column=4, padx=2)
-                w_cb.bind("<<ComboboxSelected>>", lambda e: self.plot_data())
-                
-                # Стиль
-                ttk.Label(parent, text="S:").grid(row=row, column=5, padx=2)
-                s_cb = ttk.Combobox(parent, values=styles, textvariable=self.sample_linestyles[name], width=5, state="readonly")
-                s_cb.grid(row=row, column=6, padx=2)
-                s_cb.bind("<<ComboboxSelected>>", lambda e: self.plot_data())
-                
-                # Маркер
-                ttk.Label(parent, text="M:").grid(row=row, column=7, padx=2)
-                m_cb = ttk.Combobox(parent, values=markers, textvariable=self.sample_markers[name], width=5, state="readonly")
-                m_cb.grid(row=row, column=8, padx=2)
-                m_cb.bind("<<ComboboxSelected>>", lambda e: self.plot_data())
-                
-                # Удаление
-                ttk.Button(parent, text="✕", width=3, command=lambda n=name: self._delete_sample(n)).grid(row=row, column=9, padx=2, pady=2)
+                ttk.Button(file_frame, text="Удалить файл", 
+                           command=lambda f=fname: self._delete_file_by_name(f)).pack(side=tk.LEFT, padx=10)
             
-            marker_canvas.bind("<Enter>", lambda e, n=name: self._show_widget_tooltip(e.widget, n))
-            marker_canvas.bind("<Leave>", lambda e: self._hide_widget_tooltip())
-            chk.bind("<Enter>", lambda e, n=name: self._show_widget_tooltip(e.widget, n))
-            chk.bind("<Leave>", lambda e: self._hide_widget_tooltip())
-            
-            self.sample_widgets[name] = chk
-            file = self.sample_file.get(name)
-            if file and not self.file_states.get(file, tk.BooleanVar(value=True)).get():
-                chk.state(["disabled"]) 
             row += 1
+            
+            # Образцы внутри файла
+            for name in files_dict[fname]:
+                # Восстанавливаем состояние или создаем новое
+                val = old_states.get(name, True)
+                var = tk.BooleanVar(value=val)
+                self.sample_states[name] = var
+                
+                color = self.sample_colors.get(name) or self._default_color(0)
+                
+                sample_frame = ttk.Frame(parent)
+                sample_frame.grid(row=row, column=0, columnspan=10, sticky="w", padx=(25, 5), pady=1)
+                
+                # Маркер цвета
+                marker_canvas = tk.Canvas(sample_frame, width=12, height=12)
+                marker_canvas.pack(side=tk.LEFT, padx=2)
+                marker_canvas.create_rectangle(1, 1, 11, 11, fill=color, outline="black")
+                
+                # Чекбокс
+                chk = ttk.Checkbutton(sample_frame, text=name.replace(f"{fname}-", ""), variable=var, command=self.plot_data)
+                chk.pack(side=tk.LEFT, padx=2)
+                
+                # Кнопка цвета
+                ttk.Button(sample_frame, text="🎨", width=3, command=lambda n=name: self._choose_color(n)).pack(side=tk.LEFT, padx=2)
+                
+                if not is_main:
+                    # Толщина
+                    ttk.Label(sample_frame, text="W:").pack(side=tk.LEFT, padx=2)
+                    w_cb = ttk.Combobox(sample_frame, values=widths, textvariable=self.sample_linewidths[name], width=4, state="readonly")
+                    w_cb.pack(side=tk.LEFT, padx=2)
+                    w_cb.bind("<<ComboboxSelected>>", lambda e: self.plot_data())
+                    
+                    # Стиль
+                    ttk.Label(sample_frame, text="S:").pack(side=tk.LEFT, padx=2)
+                    s_cb = ttk.Combobox(sample_frame, values=styles, textvariable=self.sample_linestyles[name], width=5, state="readonly")
+                    s_cb.pack(side=tk.LEFT, padx=2)
+                    s_cb.bind("<<ComboboxSelected>>", lambda e: self.plot_data())
+                    
+                    # Маркер
+                    ttk.Label(sample_frame, text="M:").pack(side=tk.LEFT, padx=2)
+                    m_cb = ttk.Combobox(sample_frame, values=markers, textvariable=self.sample_markers[name], width=5, state="readonly")
+                    m_cb.pack(side=tk.LEFT, padx=2)
+                    m_cb.bind("<<ComboboxSelected>>", lambda e: self.plot_data())
+                    
+                    # Удаление
+                    ttk.Button(sample_frame, text="✕", width=3, command=lambda n=name: self._delete_sample(n)).pack(side=tk.LEFT, padx=2)
+                
+                marker_canvas.bind("<Enter>", lambda e, n=name: self._show_widget_tooltip(e.widget, n))
+                marker_canvas.bind("<Leave>", lambda e: self._hide_widget_tooltip())
+                chk.bind("<Enter>", lambda e, n=name: self._show_widget_tooltip(e.widget, n))
+                chk.bind("<Leave>", lambda e: self._hide_widget_tooltip())
+                
+                self.sample_widgets[name] = chk
+                if not file_var.get():
+                    chk.state(["disabled"]) 
+                
+                row += 1
+
+    def _delete_file_by_name(self, fname):
+        to_delete = [n for n, f in self.sample_file.items() if f == fname]
+        for n in to_delete:
+            for d in [self.sheets_data, self.sample_states, self.sample_colors, self.sample_widgets, self.sample_file]:
+                if n in d: del d[n]
+        if fname in self.files: del self.files[fname]
+        if fname in self.file_states: del self.file_states[fname]
+        self._after_load()
+
+    def convert_to_newtons(self):
+        self._convert_force_units(to_mpa=False)
+
+    def convert_to_mpa(self):
+        self._convert_force_units(to_mpa=True)
+
+    def _convert_force_units(self, to_mpa=True):
+        updated = False
+        for name, df in self.sheets_data.items():
+            fname = self.sample_file.get(name)
+            if not fname: continue
+            
+            s0_list = self.file_S0.get(fname, [])
+            order = self.file_samples_order.get(fname, [])
+            if not s0_list or not order or name not in order: continue
+            
+            try:
+                idx = order.index(name)
+                s0 = float(s0_list[idx])
+                if s0 <= 0: continue
+            except (ValueError, TypeError):
+                continue
+
+            if to_mpa:
+                # Н -> МПа: Напряжение = Н / S0
+                col_n = self._get_col_by_tokens(df, ["сила", "н"]) or self._get_col_by_tokens(df, ["стандартное", "н"])
+                if col_n:
+                    df["Напряжение, МПа"] = pd.to_numeric(df[col_n], errors="coerce") / s0
+                    updated = True
+            else:
+                # МПа -> Н: Сила = МПа * S0
+                col_mpa = self._get_col_by_tokens(df, ["напряжение", "мпа"]) or self._get_col_by_tokens(df, ["напряжение", "mpa"])
+                if col_mpa:
+                    df["Сила, Н"] = pd.to_numeric(df[col_mpa], errors="coerce") * s0
+                    updated = True
+        
+        if updated:
+            self._after_load()
+            messagebox.showinfo("Готово", "Конвертация успешно завершена")
+        else:
+            messagebox.showwarning("Предупреждение", "Не найдены данные для конвертации или значения S0")
 
 
     def _default_color(self, idx):
@@ -780,6 +865,7 @@ class TensileApp(tk.Tk):
             if not self.sample_states.get(name, tk.BooleanVar(value=True)).get():
                 continue
             fname = self.sample_file.get(name)
+            # Изменено: теперь проверяем file_states, которые управляются чекбоксом файла
             if fname and not self.file_states.get(fname, tk.BooleanVar(value=True)).get():
                 continue
             df = self.sheets_data.get(name)

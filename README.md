@@ -6,7 +6,7 @@
 
 ## 🚀 Скачать
 Вы можете скачать последнюю версию приложения по ссылке ниже (раздел Releases):
-**[Скачать TensileVisualizer.exe](https://github.com/onisps/tensile_results_visualise_app/releases/latest/download/TensileVisualizer.exe)**
+**[Скачать](https://github.com/onisps/tensile_results_visualise_app/releases/)**
 
 ## 🛠 Основной функционал
 

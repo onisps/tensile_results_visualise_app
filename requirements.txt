@@ -4,3 +4,4 @@ matplotlib
 xlrd
 tornado
 Pillow
+pyinstaller

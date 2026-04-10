@@ -1,0 +1,6 @@
+pandas
+openpyxl
+matplotlib
+xlrd
+tornado
+Pillow

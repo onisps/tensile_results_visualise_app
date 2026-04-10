@@ -1,0 +1,11 @@
+.venv/
+build/
+dist/
+test_data/
+__pycache__/
+*.pyc
+*.spec
+.idea/
+.vscode/
+*.tvis
+*.exe
